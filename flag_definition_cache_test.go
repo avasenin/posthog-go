@@ -44,24 +44,21 @@ const cachedFlagDefinitions = `{
 	"minimal_flag_called_events": true
 }`
 
-const malformedMultivariateFlags = `[{
+var malformedMultivariateFlags = []json.RawMessage{json.RawMessage(`{
 	"key": "malformed-multivariate",
 	"active": true,
 	"filters": {"multivariate": {"variants": [{"key": "control"}]}}
-}]`
+}`)}
 
-func decodedFlags(t *testing.T, raw json.RawMessage) []FeatureFlag {
+func decodedFlags(t *testing.T, raw []json.RawMessage) []FeatureFlag {
 	t.Helper()
-	var flags []FeatureFlag
-	require.NoError(t, json.Unmarshal(raw, &flags))
+	flags := make([]FeatureFlag, 0, len(raw))
+	for _, r := range raw {
+		var flag FeatureFlag
+		require.NoError(t, json.Unmarshal(r, &flag))
+		flags = append(flags, flag)
+	}
 	return flags
-}
-
-func decodedCohorts(t *testing.T, raw json.RawMessage) map[string]PropertyGroup {
-	t.Helper()
-	var cohorts map[string]PropertyGroup
-	require.NoError(t, json.Unmarshal(raw, &cohorts))
-	return cohorts
 }
 
 type fakeFlagDefinitionCache struct {
@@ -215,7 +212,7 @@ func TestFlagDefinitionCacheLeaderFetchesAndPublishes(t *testing.T) {
 
 	require.Len(t, decodedFlags(t, published[0].Flags), 2)
 	require.Equal(t, map[string]string{"0": "company"}, published[0].GroupTypeMapping)
-	require.Contains(t, decodedCohorts(t, published[0].Cohorts), "1")
+	require.Contains(t, published[0].Cohorts, "1")
 	require.True(t, published[0].MinimalFlagCalledEvents)
 
 	state := poller.state.Load()
@@ -306,7 +303,7 @@ func TestFlagDefinitionCacheEvaluatesFlagsLoadedFromCache(t *testing.T) {
 func TestFlagDefinitionCacheEmptyFlagsIsAHit(t *testing.T) {
 	provider := &fakeFlagDefinitionCache{
 		shouldFetch: false,
-		cached:      &FlagDefinitionCacheData{Flags: json.RawMessage(`[]`)},
+		cached:      &FlagDefinitionCacheData{Flags: []json.RawMessage{}},
 	}
 	server, requests := definitionsServer(t, serveDefinitions(cachedFlagDefinitions))
 
@@ -336,7 +333,7 @@ func TestFlagDefinitionCacheMissingFlagsIsAMiss(t *testing.T) {
 }
 
 func TestFlagDefinitionCacheUnusableDefinitionsKeepTheLoadedOnes(t *testing.T) {
-	malformed := FlagDefinitionCacheData{Flags: json.RawMessage(malformedMultivariateFlags)}
+	malformed := FlagDefinitionCacheData{Flags: malformedMultivariateFlags}
 
 	provider := &fakeFlagDefinitionCache{shouldFetch: true}
 	server, requests := definitionsServer(t, serveDefinitions(cachedFlagDefinitions))
@@ -362,7 +359,7 @@ func TestFlagDefinitionCacheUnusableDefinitionsKeepTheLoadedOnes(t *testing.T) {
 func TestFlagDefinitionCacheUnusableDefinitionsFetchWithoutWarmState(t *testing.T) {
 	provider := &fakeFlagDefinitionCache{
 		shouldFetch: false,
-		cached:      &FlagDefinitionCacheData{Flags: json.RawMessage(malformedMultivariateFlags)},
+		cached:      &FlagDefinitionCacheData{Flags: malformedMultivariateFlags},
 	}
 	server, requests := definitionsServer(t, serveDefinitions(cachedFlagDefinitions))
 
@@ -483,8 +480,8 @@ func TestFlagDefinitionCacheNotModifiedRepublishesDefinitions(t *testing.T) {
 
 	_, _, _, published := provider.calls()
 	require.Len(t, published, 2)
-	require.Len(t, decodedFlags(t, published[1].Flags), 2, "the 304 republishes the definitions in memory")
-	require.Contains(t, decodedCohorts(t, published[1].Cohorts), "1")
+	require.Len(t, published[1].Flags, 2, "the 304 republishes the definitions in memory")
+	require.Contains(t, published[1].Cohorts, "1")
 	require.True(t, published[1].MinimalFlagCalledEvents, "the 304 republishes the gate too")
 }
 

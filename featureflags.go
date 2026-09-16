@@ -631,8 +631,7 @@ func (poller *FeatureFlagsPoller) loadFlagDefinitionsFromCache() bool {
 // hasFlagsField distinguishes a cached payload with an explicit flags array, even an
 // empty one, from a provider that deserialized a document without one.
 func hasFlagsField(data FlagDefinitionCacheData) bool {
-	flags := bytes.TrimSpace(data.Flags)
-	return len(flags) > 0 && !bytes.Equal(flags, []byte("null"))
+	return data.Flags != nil
 }
 
 // flagDefinitions is the evaluator's view of a FlagDefinitionCacheData payload.
@@ -645,33 +644,43 @@ type flagDefinitions struct {
 // payloads that would crash preprocessing. Absent flags decode to an empty set, as the
 // API may answer that way for a project without flags.
 func decodeFlagDefinitions(data FlagDefinitionCacheData) (flagDefinitions, error) {
-	decoded := flagDefinitions{flags: []FeatureFlag{}}
-	if len(data.Flags) > 0 {
-		if err := json.Unmarshal(data.Flags, &decoded.flags); err != nil {
-			return flagDefinitions{}, fmt.Errorf("flags: %w", err)
-		}
-	}
-	if decoded.flags == nil {
-		decoded.flags = []FeatureFlag{}
-	}
+	decoded := flagDefinitions{flags: make([]FeatureFlag, 0, len(data.Flags))}
 
-	for _, flag := range decoded.flags {
-		if flag.Filters.Multivariate == nil {
-			continue
+	for i, raw := range data.Flags {
+		var flag FeatureFlag
+		if err := json.Unmarshal(raw, &flag); err != nil {
+			return flagDefinitions{}, fmt.Errorf("flags[%d]: %w", i, err)
 		}
-		for _, variant := range flag.Filters.Multivariate.Variants {
-			if variant.RolloutPercentage == nil {
-				return flagDefinitions{}, fmt.Errorf("flag %q has variant %q without a rollout percentage", flag.Key, variant.Key)
-			}
+		if err := validateVariants(flag); err != nil {
+			return flagDefinitions{}, err
 		}
+		decoded.flags = append(decoded.flags, flag)
 	}
 
 	if len(data.Cohorts) > 0 {
-		if err := json.Unmarshal(data.Cohorts, &decoded.cohorts); err != nil {
-			return flagDefinitions{}, fmt.Errorf("cohorts: %w", err)
+		decoded.cohorts = make(map[string]PropertyGroup, len(data.Cohorts))
+		for id, raw := range data.Cohorts {
+			var cohort PropertyGroup
+			if err := json.Unmarshal(raw, &cohort); err != nil {
+				return flagDefinitions{}, fmt.Errorf("cohorts[%s]: %w", id, err)
+			}
+			decoded.cohorts[id] = cohort
 		}
 	}
 	return decoded, nil
+}
+
+// validateVariants rejects the one shape known to panic during preprocessing.
+func validateVariants(flag FeatureFlag) error {
+	if flag.Filters.Multivariate == nil {
+		return nil
+	}
+	for _, variant := range flag.Filters.Multivariate.Variants {
+		if variant.RolloutPercentage == nil {
+			return fmt.Errorf("flag %q has variant %q without a rollout percentage", flag.Key, variant.Key)
+		}
+	}
+	return nil
 }
 
 // applyFlagDefinitions precomputes the evaluation lookups and atomically swaps in the

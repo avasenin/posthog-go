@@ -6,16 +6,16 @@ import (
 )
 
 // FlagDefinitionCacheData is the local evaluation payload for a project, as served by
-// the PostHog API. Flags and Cohorts are kept as raw JSON so that a cache shared with
+// the PostHog API. Each flag and cohort is kept as raw JSON so that a cache shared with
 // other SDKs preserves fields this SDK does not use.
 type FlagDefinitionCacheData struct {
 	_ struct{}
 
-	Flags                   json.RawMessage   `json:"flags"`
-	GroupTypeMapping        map[string]string `json:"group_type_mapping"`
-	Cohorts                 json.RawMessage   `json:"cohorts"`
-	MinimalFlagCalledEvents bool              `json:"minimal_flag_called_events"`
-	PropertyMatchingVersion int               `json:"property_matching_version"`
+	Flags                   []json.RawMessage          `json:"flags"`
+	GroupTypeMapping        map[string]string          `json:"group_type_mapping"`
+	Cohorts                 map[string]json.RawMessage `json:"cohorts"`
+	MinimalFlagCalledEvents bool                       `json:"minimal_flag_called_events"`
+	PropertyMatchingVersion int                        `json:"property_matching_version,omitempty"`
 }
 
 // FlagDefinitionCacheProvider shares feature flag definitions between SDK

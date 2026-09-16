@@ -102,7 +102,7 @@ func (c *FileFlagCache) OnFlagDefinitionsReceived(_ context.Context, data postho
 		return err
 	}
 
-	fmt.Printf("   [%s] published %d bytes of flag definitions to the shared cache\n", c.shortID(), len(encoded))
+	fmt.Printf("   [%s] published %d flag definitions to the shared cache\n", c.shortID(), len(data.Flags))
 	return os.Rename(tmp.Name(), c.cachePath())
 }
 
